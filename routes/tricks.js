@@ -9,9 +9,9 @@ import { updateTrick } from "../controllers/trick.js";
 
 const router = express.Router();
 
+router.post("/", addTrick)
 router.get("/", getTricks)
 router.get("/:id", getTrick)
-router.post("/", addTrick)
 router.delete("/:id", deleteTrick)
 router.put("/:id", updateTrick)
 

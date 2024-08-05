@@ -1,8 +1,19 @@
 import { db } from "../db.js";
+import jwt from 'jsonwebtoken';
+import fs from 'fs';
 
-
+// Endpoint to get all the recipes
 export const getRecipes = (req, res) => {
-    const q = "SELECT r.recipes_id, r.recipes_title, r.recipes_desc, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, u.users_username FROM recipes r JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_publish_status='published' ORDER BY r.recipes_published_on";
+    console.log("Current user:", req.query.user);
+    let q;
+    if(req.query.user) {
+        q = `SELECT r.recipes_id, r.recipes_title, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, r.recipes_publish_status, r.recipes_users_id, u.users_username FROM recipes r JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_users_id=${req.query.user} ORDER BY r.recipes_created_at DESC`;
+    } else if(req.query.cat) {
+        q = `SELECT r.recipes_id, r.recipes_title, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, r.recipes_users_id, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_publish_status='published' AND r.recipes_categories_name=${req.query.cat} ORDER BY r.recipes_published_on DESC`;
+    } else {
+        q = "SELECT r.recipes_id, r.recipes_title, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, r.recipes_users_id, r.recipes_users_id, u.users_username FROM recipes r JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_publish_status='published' ORDER BY r.recipes_published_on DESC";
+    }
+    
     db.query(q, (err,data) => {
         if (err) {
             console.log(err);
@@ -13,100 +24,60 @@ export const getRecipes = (req, res) => {
     })
 }
 
+/*
 export const getCatRecipes = (req, res) => {
+    console.log("Categories", req.query)
     res.json("From controller");
-}
-
-export const getRecipe = (req, res) => {
-    console.log("Recipe ID",req.params.id)
     
+}
+*/
+
+// Endpoint to get a recipe by ID
+export const getRecipe = (req, res) => {
     const q =
-    "SELECT r.recipes_id, r.recipes_title, r.recipes_desc, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, u.users_username FROM recipes r JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
+    "SELECT r.recipes_id, r.recipes_title, r.recipes_ingredients, r.recipes_directions, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, c.categories_name, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
     
     db.query(q, [req.params.id], (err,data) => {
         if (err) {
-            console.log("Paso por aqui error", err)
             res.json(err);
         }
-        console.log(data);
-//        return res.json("OK")
-//        return res.json(data)
-        const q2 = "SELECT * FROM ingredients WHERE ingredients_recipes_id = ?"
-        db.query(q2, [req.params.id], (err,data1) => {
-            if (err) res.json(err);
-            console.log(data1);
-
-            const q3 = "SELECT * FROM steps WHERE steps_recipes_id = ?"
-            db.query(q3, [req.params.id], (err,data2) => {
-                if (err) res.json(err);
-                console.log(data2);
-
-                const recipe = {
-                    "id": data[0].recipes_id,
-                    "title": data[0].recipes_title,
-                    "desc": data[0].recipes_desc,
-                    "prep_time": data[0].recipes_prep_time,
-                    "servings": data[0].recipes_servings,
-                    "img_url": data[0].recipes_img_url,
-                    "published_on": data[0].recipes_published_on,
-                    "users_username": data[0].users_username,
-                    "ingredients": data1,
-                    "steps": data2
-                }
-                return res.json(recipe)
-            })
-        })
+        return res.json(data);
     })
 }
 
-/*
-export const addRecipe = (req, res) => {
-    console.log("File", req.file)
-    console.log("Body", req.body)
-    console.log("Cookies", req.cookies)
+// Endpoint for deleting a recipe by ID
+export const deleteRecipe = (req, res) => {
     const token = req.cookies.access_token;
     
     if(!token) {
         return res.json("401") // Not authenticated
     }
-    
-
-    return "OK"
-
     jwt.verify(token,"jwtkey", (err, userInfo) => {
         if (err) {
            return res.json("403") // Token in not valid
         }
+    })
 
-        const q1 = "SELECT categories_id FROM categories WHERE categories_name = ?";
-        db.query(q1, [req.body.categories_name], (err,data) => {
-            if(err) return res.json(err);
+    const q = "SELECT recipes_img_url FROM recipes WHERE recipes_id = ?"
     
-            const q = "INSERT INTO posts(posts_title, posts_desc, posts_img, posts_categories_id, posts_date, posts_users_id, posts_publish) VALUES (?)";
+    db.query(q, [req.params.id], (err,data) => {
+        if(err) return res.json(err);
+        
+        fs.unlink('./public/images/'+data[0].recipes_img_url, (err) => {
+            if (err) {
+                return res.json("An error ocurred when deleting the recipe image")
+            }
+            const q1 = "DELETE FROM recipes WHERE recipes_id = ?"
 
-            const values = [
-                req.body.posts_title,
-                req.body.posts_desc,
-                req.body.posts_img,
-                data[0].categories_id,
-                req.body.posts_date,
-                userInfo.id,
-                req.body.posts_publish
-            //    userInfo.id
-            ]
-
-            db.query(q, [values], (err,data) => {
+            db.query(q1, [req.params.id], (err,data) => {
                 if(err) return res.json(err);
-                return res.json("Post has been created");
+                return res.json("Recipe has been deleted");
             })
         })
-    });
-}
-*/
-export const deleteRecipe = (req, res) => {
-    res.json("From controller");
+    })
 }
 
+// Endpoint for updating a recipe by ID
 export const updateRecipe = (req, res) => {
     res.json("From controller");
 }

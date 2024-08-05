@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 
 export const register = (req,res) => {
     // CHECK USER EXISTS
-    const q = "SELECT * FROM users WHERE users_email='"+req.body.email+"' OR users_username='"+req.body.username+"'";
+    const q = `SELECT * FROM users WHERE users_email="${req.body.email}" OR users_username="${req.body.username}"`;
 
     db.query(q, (err,data) => {    
         if (err) {
@@ -55,6 +55,6 @@ export const login = (req,res) => {
 }
 
 export const logout = (req,res) => {
-    res.clearCookie("access_token").json("User has been logged out");
-    return res.sendStatus(204);
+    return res.clearCookie("access_token").json("User has been logged out");
+//    return res.sendStatus(204);
 }

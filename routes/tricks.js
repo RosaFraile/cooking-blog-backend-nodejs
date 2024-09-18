@@ -13,6 +13,6 @@ router.post("/", addTrick)
 router.get("/", getTricks)
 router.get("/:id", getTrick)
 router.delete("/:id", deleteTrick)
-router.put("/:id", updateTrick)
+router.patch("/:id", updateTrick)
 
 export default router;

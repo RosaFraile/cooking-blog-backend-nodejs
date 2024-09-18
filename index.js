@@ -27,6 +27,19 @@ app.use(cors(corsOptions));
 // Configurar Express para servir archivos estáticos
 app.use('/images', express.static(path.join('public/images')));
 
+//Función para comprobar que el usuario está loggeado y que el token es válido
+const checkToken = token => {
+    if(!token) {
+        return {status: 401, message: "User not authenticated"};
+    }
+    jwt.verify(token,"jwtkey", (err, userInfo) => {
+        if (err) {
+            return {status: 403, message: "Token is not valid"};
+        }
+        return {status: 200, message: "OK"};
+    })
+}
+
 // Configurar multer para almacenar imagenes
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -45,36 +58,31 @@ const upload = multer({ storage: storage })
 
 ////////////////// Endpoint to add a new recipe ///////////////////////
 app.post('/recipes', upload.single('file'), function (req, res, next) {
-    const token = req.cookies.access_token;
-    
-    if(!token) {
-        return res.json("401") // Not authenticated
+    const response = checkToken(req.cookies.access_token);
+
+    if (response && response.status !== 200) {
+        return res.status(`${response.status}`).json({error: response.message, statusCode: response.status});
     }
-    jwt.verify(token,"jwtkey", (err, userInfo) => {
-        if (err) {
-           return res.json("403") // Token in not valid
-        }
-    })
 
     const file = req.file;
     if (!file) {
-        const error = new Error("Please upload a file");
-        error.httpStatusCode = 400;
-        return next(error);
+        return res.status(400).json({error: "Please, upload a file", statusCode: 400});
     }
 
     const q1 = "SELECT categories_id FROM categories WHERE categories_name = ?";
 
     db.query(q1, [req.body.cat_name], (err,data) => {
         if (err) return res.json(err);
-        if(data.length === 0) return res.json("404"); // Category not found
+        if(data.length === 0) {
+            return res.status(404).json({error: "Category not found", statusCode: 404});
+        }
         
         const created_at = moment().format('YYYY-MM-DD HH:mm:ss');
-        let published_on = null;
+        let published_on = moment("1970-01-01").format('YYYY-MM-DD HH:mm:ss');
         if(req.body.published_on) {
             published_on = req.body.published_on
         }
-        const q2 = "INSERT INTO recipes(`recipes_title`,`recipes_ingredients`,`recipes_directions`,`recipes_prep_time`, `recipes_servings`, `recipes_img_url`, `recipes_created_at`,`recipes_published_on`,`recipes_publish_status`,`recipes_categories_id`, `recipes_users_id`) VALUES(?)";
+        const q2 = "INSERT INTO recipes(`recipes_title`,`recipes_ingredients`,`recipes_directions`,`recipes_prep_time`, `recipes_servings`, `recipes_img_url`, `recipes_difficulty`, `recipes_created_at`,`recipes_published_on`,`recipes_publish_status`,`recipes_categories_id`, `recipes_users_id`) VALUES(?)";
         const values = [
             req.body.title,
             req.body.ingredients,
@@ -82,6 +90,7 @@ app.post('/recipes', upload.single('file'), function (req, res, next) {
             req.body.prep_time,
             req.body.servings,
             file.filename,
+            req.body.difficulty,
             created_at,
             published_on,
             req.body.publish_status,
@@ -90,17 +99,15 @@ app.post('/recipes', upload.single('file'), function (req, res, next) {
         ]
         db.query(q2, [values], (err,data) => {
             if (err) {
-                console.log(err);
                 return res.json(err);
             }
             const newID = data.insertId
-            const q3 = "SELECT r.recipes_id, r.recipes_title, r.recipes_ingredients, r.recipes_directions, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, c.categories_name, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
+            const q3 = "SELECT r.recipes_id, r.recipes_title, r.recipes_ingredients, r.recipes_directions, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_difficulty, r.recipes_published_on, r.recipes_publish_status, c.categories_name, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
             
             db.query(q3, [newID], (err,data) => {
                 if (err) {
                     res.json(err);
                 }
-                console.log("New recipe", data)
                 return res.json(data);
             })
         })
@@ -109,17 +116,11 @@ app.post('/recipes', upload.single('file'), function (req, res, next) {
 
 ///////////////// Endpoint to update a recipe by ID ////////////////////
 app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
-    console.log("ID of the recipe to update", req.body.id)
-    const token = req.cookies.access_token;
-    
-    if(!token) {
-        return res.json("401") // Not authenticated
+    const response = checkToken(req.cookies.access_token);
+
+    if (response && response.status !== 200) {
+        return res.status(`${response.status}`).json({error: response.message, statusCode: response.status});
     }
-    jwt.verify(token,"jwtkey", (err, userInfo) => {
-        if (err) {
-           return res.json("403") // Token in not valid
-        }
-    })
 
     let img_url;
     if (req.file) {
@@ -127,14 +128,17 @@ app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
     } else if (req.body.img_url) {
         img_url = req.body.img_url;
     } else {
-        return res.json("Please, load an image!!!")
+        return res.status(400).json({error: "Please, upload a file", statusCode: 400});
     }
 
     const q1 = "SELECT categories_id FROM categories WHERE categories_name = ?";
 
     db.query(q1, [req.body.cat_name], (err,data) => {
         if (err) return res.json(err);
-        if(data.length === 0) return res.json("404"); // Category not found
+
+        if(data.length === 0) {
+            return res.status(404).json({error: "Category not found", statusCode: 404});
+        }
 
         const category_id = data[0].categories_id;
 
@@ -145,6 +149,7 @@ app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
                         recipes_prep_time = "${req.body.prep_time}",
                         recipes_servings = ${req.body.servings},
                         recipes_img_url = "${img_url}",
+                        recipes_difficulty = "${req.body.difficulty}",
                         recipes_published_on = "${req.body.published_on}", 
                         recipes_publish_status = "${req.body.publish_status}",
                         recipes_categories_id = ${category_id} 
@@ -160,7 +165,6 @@ app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
                 if (err) {
                     return res.json(err);
                 }
-                console.log("Respuesta DB", data)
                 return res.json(data)
             })
         })

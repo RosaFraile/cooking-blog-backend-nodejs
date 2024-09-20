@@ -6,6 +6,7 @@ import multer from "multer";
 import moment from "moment";
 import path from "path";
 import jwt from 'jsonwebtoken';
+import fs from 'fs';
 
 import authRoutes from "./routes/auth.js";
 import categoryRoutes from "./routes/categories.js";
@@ -60,11 +61,19 @@ const upload = multer({ storage: storage })
 app.post('/recipes', upload.single('file'), function (req, res, next) {
     const response = checkToken(req.cookies.access_token);
 
+    const file = req.file;
+
     if (response && response.status !== 200) {
+        if(file) {
+            fs.unlink(`./public/images/${file.filename}`, (err) => {
+                if (err) {
+                    return res.json(err) // An error ocurred when deleting the recipe image
+                }
+            })
+        }
         return res.status(`${response.status}`).json({error: response.message, statusCode: response.status});
     }
 
-    const file = req.file;
     if (!file) {
         return res.status(400).json({error: "Please, upload a file", statusCode: 400});
     }
@@ -72,8 +81,20 @@ app.post('/recipes', upload.single('file'), function (req, res, next) {
     const q1 = "SELECT categories_id FROM categories WHERE categories_name = ?";
 
     db.query(q1, [req.body.cat_name], (err,data) => {
-        if (err) return res.json(err);
+        if (err) {
+            fs.unlink(`./public/images/${file.filename}`, (err) => {
+                if (err) {
+                    return res.json(err) // An error ocurred when deleting the recipe image
+                }
+            })
+            return res.json(err);
+        }
         if(data.length === 0) {
+            fs.unlink(`./public/images/${file.filename}`, (err) => {
+                if (err) {
+                    return res.json(err) // An error ocurred when deleting the recipe image
+                }
+            })
             return res.status(404).json({error: "Category not found", statusCode: 404});
         }
         
@@ -99,8 +120,14 @@ app.post('/recipes', upload.single('file'), function (req, res, next) {
         ]
         db.query(q2, [values], (err,data) => {
             if (err) {
+                fs.unlink(`./public/images/${file.filename}`, (err) => {
+                    if (err) {
+                        return res.json(err) // An error ocurred when deleting the recipe image
+                    }
+                })
                 return res.json(err);
             }
+
             const newID = data.insertId
             const q3 = "SELECT r.recipes_id, r.recipes_title, r.recipes_ingredients, r.recipes_directions, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_difficulty, r.recipes_published_on, r.recipes_publish_status, c.categories_name, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
             
@@ -134,7 +161,10 @@ app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
     const q1 = "SELECT categories_id FROM categories WHERE categories_name = ?";
 
     db.query(q1, [req.body.cat_name], (err,data) => {
+        console.log("Checkpoint 1")
         if (err) return res.json(err);
+
+        console.log("Checkpoint 2")
 
         if(data.length === 0) {
             return res.status(404).json({error: "Category not found", statusCode: 404});
@@ -159,12 +189,16 @@ app.patch('/recipes/:id', upload.single('file'), function (req, res, next) {
                 return res.json(err);
             }
 
+            console.log("Checkpoint 3")
+
             const q2 = "SELECT r.recipes_id, r.recipes_title, r.recipes_ingredients, r.recipes_directions, r.recipes_prep_time, r.recipes_servings, r.recipes_img_url, r.recipes_published_on, r.recipes_publish_status, r.recipes_users_id, c.categories_name, u.users_username FROM recipes r JOIN categories c ON c.categories_id = r.recipes_categories_id JOIN users u ON u.users_id = r.recipes_users_id WHERE r.recipes_id = ?";
             
             db.query(q2, [req.body.id], (err,data) => {
                 if (err) {
+                    console.log("Checkpoint 4")
                     return res.json(err);
                 }
+                console.log("Checkpoint 5", data)
                 return res.json(data)
             })
         })
